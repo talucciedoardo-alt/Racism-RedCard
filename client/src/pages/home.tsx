@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, AlertTriangle, RefreshCw, Flag, ShieldAlert } from "lucide-react";
+import { Mic, AlertTriangle, RefreshCw, Flag, ShieldAlert, Settings2, Keyboard, Ghost } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // List of offensive trigger words (curated for strict monitoring)
@@ -12,8 +12,10 @@ type PenaltyType = "NONE" | "YELLOW" | "RED";
 export default function Home() {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
+  const [textInput, setTextInput] = useState("");
   const [penalty, setPenalty] = useState<PenaltyType>("NONE");
   const [showShame, setShowShame] = useState(false);
+  const [useTextMode, setUseTextMode] = useState(true); // Defaulting to text mode since mic is unreliable in frames
   const { toast } = useToast();
 
   const SpeechRecognition =
@@ -37,21 +39,28 @@ export default function Home() {
       recognition.current.onerror = (event: any) => {
         console.error("Speech recognition error", event.error);
         setIsListening(false);
+        setUseTextMode(true);
+        toast({
+          title: "Microphone Access Failed",
+          description: "Falling back to Text Mode. This is common in secured browser environments.",
+        });
       };
       
       recognition.current.onend = () => {
         setIsListening(false);
       };
+    } else {
+      setUseTextMode(true);
     }
   }, []);
 
   const toggleListening = () => {
     if (!recognition.current) {
       toast({
-        title: "Browser not supported",
-        description: "Your browser doesn't support speech recognition.",
-        variant: "destructive",
+        title: "Voice Not Supported",
+        description: "Your browser doesn't support speech recognition. Use Text Mode instead.",
       });
+      setUseTextMode(true);
       return;
     }
 
@@ -63,24 +72,30 @@ export default function Home() {
       setTranscript("");
       recognition.current.start();
       setIsListening(true);
+      setUseTextMode(false);
     }
   };
 
   const checkContent = (text: string) => {
     const lowerText = text.toLowerCase();
     
-    // Check Red Card Triggers first
     if (RED_CARD_TRIGGERS.some((word) => lowerText.includes(word))) {
       triggerPenalty("RED");
       return;
     }
 
-    // Check Yellow Card Triggers
     if (YELLOW_CARD_TRIGGERS.some((word) => lowerText.includes(word))) {
       if (penalty !== "RED") {
         triggerPenalty("YELLOW");
       }
     }
+  };
+
+  const handleTextSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!textInput.trim()) return;
+    checkContent(textInput);
+    setTextInput("");
   };
 
   const triggerPenalty = (type: PenaltyType) => {
@@ -91,7 +106,7 @@ export default function Home() {
     
     setTimeout(() => {
       setShowShame(true);
-    }, 1500);
+    }, 1200);
   };
 
   const playWhistle = (type: PenaltyType) => {
@@ -122,6 +137,7 @@ export default function Home() {
     setPenalty("NONE");
     setShowShame(false);
     setTranscript("");
+    setTextInput("");
   };
 
   const getBgColor = () => {
@@ -131,69 +147,113 @@ export default function Home() {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col items-center justify-center p-4 transition-colors duration-1000 ${getBgColor()}`}>
+    <div className={`min-h-screen flex flex-col items-center justify-center p-4 transition-all duration-1000 ${getBgColor()}`}>
       
       <div className="fixed inset-0 pointer-events-none opacity-5 z-0" 
            style={{ backgroundImage: 'radial-gradient(circle at center, black 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
       </div>
 
-      <div className="z-10 w-full max-w-md mx-auto text-center space-y-8">
+      <div className="z-10 w-full max-w-lg mx-auto text-center space-y-8">
         
         <div className="space-y-2">
-          <h1 className={`font-display text-5xl tracking-tight uppercase transition-colors duration-500 ${penalty !== "NONE" ? 'text-white' : 'text-primary'}`}>
-            {penalty === "RED" ? "EXPULSION!" : penalty === "YELLOW" ? "WARNING!" : "The Referee"}
-          </h1>
-          <p className={`font-medium ${penalty !== "NONE" ? 'text-white/70' : 'text-muted-foreground'}`}>
-            {penalty === "NONE" ? "Monitoring for toxicity." : "Violation recorded."}
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <h1 className={`font-display text-6xl tracking-tighter uppercase transition-colors duration-500 ${penalty !== "NONE" ? 'text-white' : 'text-primary'}`}>
+              {penalty === "RED" ? "EXPULSION" : penalty === "YELLOW" ? "WARNING" : "The Referee"}
+            </h1>
+          </motion.div>
+          <p className={`font-medium tracking-widest uppercase text-xs ${penalty !== "NONE" ? 'text-white/70' : 'text-muted-foreground'}`}>
+            {penalty === "NONE" ? "Zero Tolerance Environment" : "Rules Violation Detected"}
           </p>
         </div>
 
-        <div className="relative h-64 flex items-center justify-center">
+        <div className="relative h-72 flex items-center justify-center perspective-1000">
           <AnimatePresence mode="wait">
             {penalty === "NONE" ? (
               <motion.div 
-                key="listening-ui"
+                key="main-ui"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.5 }}
-                className="w-full"
+                className="w-full space-y-8"
               >
-                <div className="relative group cursor-pointer" onClick={toggleListening}>
-                  <div className={`absolute inset-0 rounded-full bg-primary/20 blur-xl transition-all duration-500 ${isListening ? 'scale-150 opacity-100' : 'scale-100 opacity-0'}`} />
-                  <div className={`w-32 h-32 mx-auto rounded-full flex items-center justify-center border-4 transition-all duration-300 ${isListening ? 'border-primary bg-primary text-white scale-110' : 'border-muted bg-white text-foreground hover:border-primary'}`}>
-                    <Mic className={`w-12 h-12 ${isListening ? 'animate-pulse' : ''}`} />
-                  </div>
+                {/* Interaction Modes */}
+                <div className="flex justify-center gap-4 mb-8">
+                  <button 
+                    onClick={() => setUseTextMode(false)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all ${!useTextMode ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-secondary text-secondary-foreground opacity-50'}`}
+                  >
+                    <Mic className="w-3 h-3" /> Voice
+                  </button>
+                  <button 
+                    onClick={() => setUseTextMode(true)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all ${useTextMode ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-secondary text-secondary-foreground opacity-50'}`}
+                  >
+                    <Keyboard className="w-3 h-3" /> Text
+                  </button>
                 </div>
+
+                {!useTextMode ? (
+                  <div className="relative group cursor-pointer mx-auto" onClick={toggleListening}>
+                    <div className={`absolute inset-0 rounded-full bg-primary/20 blur-2xl transition-all duration-500 ${isListening ? 'scale-150 opacity-100' : 'scale-100 opacity-0'}`} />
+                    <div className={`w-32 h-32 mx-auto rounded-full flex items-center justify-center border-8 transition-all duration-300 ${isListening ? 'border-primary bg-primary text-white scale-110 rotate-12' : 'border-muted bg-white text-foreground hover:border-primary shadow-xl'}`}>
+                      <Mic className={`w-12 h-12 ${isListening ? 'animate-pulse' : ''}`} />
+                    </div>
+                  </div>
+                ) : (
+                  <motion.form 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    onSubmit={handleTextSubmit}
+                    className="relative max-w-sm mx-auto"
+                  >
+                    <input 
+                      type="text"
+                      value={textInput}
+                      onChange={(e) => setTextInput(e.target.value)}
+                      placeholder="Type something..."
+                      className="w-full bg-white border-2 border-muted rounded-2xl px-6 py-4 text-lg font-medium focus:border-primary focus:outline-none transition-all shadow-xl"
+                    />
+                    <button type="submit" className="absolute right-2 top-2 bottom-2 px-4 bg-primary text-white rounded-xl font-bold text-sm hover:scale-105 transition-transform">
+                      Check
+                    </button>
+                  </motion.form>
+                )}
                 
-                <div className="mt-8 h-16 flex items-center justify-center">
-                  {isListening ? (
-                     <div className="flex gap-1 items-center justify-center h-full">
-                       {[1,2,3,4,5].map((i) => (
-                         <motion.div
-                           key={i}
-                           className="w-1 bg-primary"
-                           animate={{ height: [10, 24, 10] }}
-                           transition={{ repeat: Infinity, duration: 0.5 + (i * 0.1), ease: "linear" }}
-                         />
-                       ))}
-                     </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground font-mono">Click mic to start session</p>
-                  )}
+                <div className="h-12 flex items-center justify-center">
+                  <AnimatePresence>
+                    {isListening && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-1">
+                        {[1,2,3,4,5,6].map((i) => (
+                          <motion.div
+                            key={i}
+                            className="w-1.5 rounded-full bg-primary"
+                            animate={{ height: [12, 32, 12] }}
+                            transition={{ repeat: Infinity, duration: 0.4 + (i * 0.05) }}
+                          />
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </motion.div>
             ) : (
               <motion.div
                 key={penalty}
-                initial={{ rotateY: 90, scale: 0.5, z: -100 }}
-                animate={{ rotateY: 0, scale: 1.2, z: 0 }}
-                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                className="perspective-1000"
+                initial={{ rotateY: 180, scale: 0, z: -500 }}
+                animate={{ rotateY: 0, scale: 1.3, z: 0 }}
+                transition={{ type: "spring", stiffness: 200, damping: 15 }}
+                className="transform-style-3d"
               >
-                 <div className={`w-48 h-72 ${penalty === "RED" ? "bg-[#ff0000]" : "bg-[#ffcc00]"} rounded-xl shadow-2xl border-4 border-white/20 flex items-center justify-center relative overflow-hidden transform-style-3d`}>
-                    <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent pointer-events-none" />
-                    <ShieldAlert className={`w-20 h-20 ${penalty === "RED" ? "text-red-900/40" : "text-amber-900/40"}`} />
-                    <div className="absolute bottom-4 right-4 text-black/20 font-display text-6xl">
+                 <div className={`w-48 h-72 ${penalty === "RED" ? "bg-[#ff0000]" : "bg-[#ffcc00]"} rounded-2xl shadow-[0_40px_80px_-15px_rgba(0,0,0,0.5)] border-4 border-white/30 flex flex-col items-center justify-center relative overflow-hidden`}>
+                    <div className="absolute inset-0 bg-gradient-to-br from-white/40 via-transparent to-black/20 pointer-events-none" />
+                    <ShieldAlert className={`w-24 h-24 mb-4 ${penalty === "RED" ? "text-red-900/40" : "text-amber-900/40"}`} />
+                    <p className={`font-display text-2xl ${penalty === "RED" ? "text-red-900/60" : "text-amber-900/60"}`}>
+                      {penalty} CARD
+                    </p>
+                    <div className="absolute bottom-4 right-4 text-black/10 font-display text-8xl">
                       {penalty === "RED" ? "!!" : "!"}
                     </div>
                  </div>
@@ -205,39 +265,42 @@ export default function Home() {
         <AnimatePresence>
           {showShame && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
               className="space-y-6"
             >
-              <div className={`backdrop-blur-md p-6 rounded-lg border border-white/20 text-white shadow-xl ${penalty === "RED" ? "bg-red-500/20" : "bg-amber-500/20"}`}>
-                <h2 className={`font-display text-3xl mb-2 uppercase ${penalty === "RED" ? "text-red-400" : "text-amber-400"}`}>
-                  {penalty} CARD ISSUED
+              <div className={`backdrop-blur-xl p-8 rounded-3xl border-2 shadow-2xl transition-all ${penalty === "RED" ? "bg-red-500/10 border-red-500/30 text-red-100" : "bg-amber-500/10 border-amber-500/30 text-amber-100"}`}>
+                <div className="flex justify-center mb-4">
+                  <Ghost className="w-12 h-12 animate-bounce" />
+                </div>
+                <h2 className={`font-display text-4xl mb-3 uppercase tracking-tighter ${penalty === "RED" ? "text-red-500" : "text-amber-500"}`}>
+                  {penalty === "RED" ? "Permanent Ban" : "Final Warning"}
                 </h2>
-                <p className="text-lg font-medium leading-relaxed">
-                  {penalty === "RED" 
-                    ? "Extreme toxicity detected. Immediate expulsion." 
-                    : "Caution: Offensive language detected. Adjust your behavior."}
+                <p className="text-xl font-medium opacity-90 leading-tight italic">
+                  "{penalty === "RED" 
+                    ? "Your conduct is unacceptable. Exit immediately." 
+                    : "This behavior will not be tolerated. Correct yourself."}"
                 </p>
               </div>
               
               <button 
                 onClick={reset}
-                className="group flex items-center justify-center gap-2 mx-auto px-6 py-3 bg-white text-black rounded-full font-bold hover:bg-gray-100 transition-colors shadow-lg"
+                className="group flex items-center justify-center gap-3 mx-auto px-10 py-5 bg-white text-black rounded-2xl font-black uppercase tracking-tighter hover:bg-gray-100 active:scale-95 transition-all shadow-2xl"
               >
-                <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
-                Reset Field
+                <RefreshCw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-700" />
+                Return to Game
               </button>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {!showShame && (
-          <div className="pt-12 border-t border-border mt-12 grid grid-cols-2 gap-4">
-             <button onClick={() => triggerPenalty("YELLOW")} className="flex items-center justify-center gap-2 p-3 text-xs bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-md hover:bg-amber-500/20 transition-all">
-               <Flag className="w-4 h-4" /> Test Yellow
+        {penalty === "NONE" && (
+          <div className="pt-8 grid grid-cols-2 gap-3 max-w-sm mx-auto opacity-50 hover:opacity-100 transition-opacity">
+             <button onClick={() => triggerPenalty("YELLOW")} className="flex items-center justify-center gap-2 p-3 text-[10px] font-bold uppercase tracking-widest bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-xl">
+               <Flag className="w-3 h-3" /> Warning
              </button>
-             <button onClick={() => triggerPenalty("RED")} className="flex items-center justify-center gap-2 p-3 text-xs bg-red-500/10 text-red-500 border border-red-500/20 rounded-md hover:bg-red-500/20 transition-all">
-               <AlertTriangle className="w-4 h-4" /> Test Red
+             <button onClick={() => triggerPenalty("RED")} className="flex items-center justify-center gap-2 p-3 text-[10px] font-bold uppercase tracking-widest bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl">
+               <AlertTriangle className="w-3 h-3" /> Expulsion
              </button>
           </div>
         )}
