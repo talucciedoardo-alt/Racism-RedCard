@@ -20,13 +20,15 @@ export default function Home() {
   const [transcript, setTranscript] = useState("");
   const [penalty, setPenalty] = useState<PenaltyType>("NONE");
   const [showShame, setShowShame] = useState(false);
-  const [volume, setVolume] = useState(0);
   const { toast } = useToast();
 
   const SpeechRecognition =
     (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   const recognition = useRef<any>(null);
   const shouldBeListening = useRef(false);
+  
+  // Ref to track silence for manual end-of-speech detection
+  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (SpeechRecognition) {
@@ -46,11 +48,20 @@ export default function Home() {
             interimTranscript += event.results[i][0].transcript;
           }
         }
-        // Simulating volume based on transcript activity
+
+        // --- Custom End-of-Speech Detection ---
+        // If we get any result (interim or final), reset the silence timer
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+        }
+
+        // If user stops talking for 1.5 seconds, we treat the current transcript as final
         if (interimTranscript.length > 0) {
-          setVolume(Math.random() * 50 + 50);
-        } else {
-          setVolume(0);
+          silenceTimeoutRef.current = setTimeout(() => {
+            console.log("Silence detected, finalizing interim result:", interimTranscript);
+            setTranscript(interimTranscript);
+            checkContent(interimTranscript);
+          }, 1500);
         }
       };
 
@@ -68,7 +79,6 @@ export default function Home() {
       };
       
       recognition.current.onend = () => {
-        // Auto-restart if it should be listening and no penalty has occurred
         if (shouldBeListening.current && penalty === "NONE") {
           try {
             recognition.current.start();
@@ -80,6 +90,10 @@ export default function Home() {
         }
       };
     }
+
+    return () => {
+      if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+    };
   }, [penalty]);
 
   const toggleListening = () => {
@@ -96,6 +110,7 @@ export default function Home() {
       shouldBeListening.current = false;
       recognition.current.stop();
       setIsListening(false);
+      if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
     } else {
       setPenalty("NONE");
       setShowShame(false);
@@ -131,6 +146,7 @@ export default function Home() {
     if (recognition.current) recognition.current.stop();
     setIsListening(false);
     playWhistle(type);
+    if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
     
     setTimeout(() => {
       setShowShame(true);
@@ -166,19 +182,18 @@ export default function Home() {
     setPenalty("NONE");
     setShowShame(false);
     setTranscript("");
-    setVolume(0);
+    if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
   };
 
   const getBgColor = () => {
     if (penalty === "RED") return "bg-red-950";
     if (penalty === "YELLOW") return "bg-amber-950";
-    return "bg-slate-950"; // Darker base for better voice visuals
+    return "bg-slate-950";
   };
 
   return (
     <div className={`min-h-screen flex flex-col items-center justify-center p-4 transition-all duration-1000 ${getBgColor()} overflow-hidden`}>
       
-      {/* Dynamic Voice Background */}
       <div className="fixed inset-0 pointer-events-none z-0">
         <AnimatePresence>
           {isListening && (
@@ -222,7 +237,6 @@ export default function Home() {
                 exit={{ opacity: 0, scale: 1.5, filter: "blur(10px)" }}
                 className="w-full flex flex-col items-center"
               >
-                {/* Visualizer Rings */}
                 <div className="relative w-48 h-48 flex items-center justify-center cursor-pointer group" onClick={toggleListening}>
                   {[...Array(3)].map((_, i) => (
                     <motion.div
@@ -256,7 +270,6 @@ export default function Home() {
                   </motion.div>
                 </div>
 
-                {/* Real-time Spectrum */}
                 <div className="mt-12 h-20 flex items-end gap-1.5">
                   {isListening ? (
                     [...Array(16)].map((_, i) => (
