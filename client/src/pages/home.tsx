@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, AlertTriangle, RefreshCw, Flag, ShieldAlert, Zap, Waves } from "lucide-react";
+import { Mic, AlertTriangle, RefreshCw, Flag, ShieldAlert, Zap, Waves, CheckCircle2, CircleOff, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // Expanded list of triggers for better detection
@@ -12,8 +12,13 @@ const YELLOW_CARD_TRIGGERS = [
   "stupid", "ugly", "idiot", "dumb", "shut up", "jerk", 
   "trash", "garbage", "loser", "annoying", "hate you"
 ];
+// Positive triggers for Green Card
+const GREEN_CARD_TRIGGERS = [
+  "kindness", "respect", "love", "equality", "friend", "help", 
+  "good job", "awesome", "peace", "unity", "fair play"
+];
 
-type PenaltyType = "NONE" | "YELLOW" | "RED";
+type PenaltyType = "NONE" | "YELLOW" | "RED" | "GREEN";
 
 export default function Home() {
   const [isListening, setIsListening] = useState(false);
@@ -26,8 +31,6 @@ export default function Home() {
     (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   const recognition = useRef<any>(null);
   const shouldBeListening = useRef(false);
-  
-  // Ref to track silence for manual end-of-speech detection
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -49,16 +52,12 @@ export default function Home() {
           }
         }
 
-        // --- Custom End-of-Speech Detection ---
-        // If we get any result (interim or final), reset the silence timer
         if (silenceTimeoutRef.current) {
           clearTimeout(silenceTimeoutRef.current);
         }
 
-        // If user stops talking for 1.5 seconds, we treat the current transcript as final
         if (interimTranscript.length > 0) {
           silenceTimeoutRef.current = setTimeout(() => {
-            console.log("Silence detected, finalizing interim result:", interimTranscript);
             setTranscript(interimTranscript);
             checkContent(interimTranscript);
           }, 1500);
@@ -70,7 +69,7 @@ export default function Home() {
         if (event.error === 'not-allowed') {
           toast({
             title: "Microphone Blocked",
-            description: "Please enable microphone access in your browser settings to use The Referee.",
+            description: "Please enable microphone access in your browser settings.",
             variant: "destructive",
           });
           setIsListening(false);
@@ -100,7 +99,7 @@ export default function Home() {
     if (!recognition.current) {
       toast({
         title: "Voice Not Supported",
-        description: "Your browser doesn't support the Web Speech API. Try using Chrome or Edge.",
+        description: "Your browser doesn't support the Web Speech API.",
         variant: "destructive",
       });
       return;
@@ -137,6 +136,13 @@ export default function Home() {
       if (penalty !== "RED") {
         triggerPenalty("YELLOW");
       }
+      return;
+    }
+
+    if (GREEN_CARD_TRIGGERS.some((word) => lowerText.includes(word))) {
+      if (penalty === "NONE") {
+        triggerPenalty("GREEN");
+      }
     }
   };
 
@@ -164,17 +170,30 @@ export default function Home() {
       gain.connect(ctx.destination);
       
       osc.type = 'sine';
-      const baseFreq = type === "RED" ? 2800 : 2000;
+      let baseFreq = 2000;
+      let duration = 0.6;
+      
+      if (type === "RED") {
+        baseFreq = 2800;
+        duration = 1.2;
+      } else if (type === "GREEN") {
+        baseFreq = 1200; // Softer, positive sound
+        duration = 0.4;
+      }
+
       osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
-      osc.frequency.linearRampToValueAtTime(baseFreq - 800, ctx.currentTime + 0.1);
-      osc.frequency.linearRampToValueAtTime(baseFreq + 800, ctx.currentTime + 0.2);
-      osc.frequency.linearRampToValueAtTime(baseFreq, ctx.currentTime + 0.4);
+      if (type !== "GREEN") {
+        osc.frequency.linearRampToValueAtTime(baseFreq - 800, ctx.currentTime + 0.1);
+        osc.frequency.linearRampToValueAtTime(baseFreq + 800, ctx.currentTime + 0.2);
+      } else {
+        osc.frequency.linearRampToValueAtTime(baseFreq + 400, ctx.currentTime + 0.2);
+      }
       
       gain.gain.setValueAtTime(0.6, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + (type === "RED" ? 1.2 : 0.6));
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
       
       osc.start();
-      osc.stop(ctx.currentTime + (type === "RED" ? 1.2 : 0.6));
+      osc.stop(ctx.currentTime + duration);
     }
   };
 
@@ -188,6 +207,7 @@ export default function Home() {
   const getBgColor = () => {
     if (penalty === "RED") return "bg-red-950";
     if (penalty === "YELLOW") return "bg-amber-950";
+    if (penalty === "GREEN") return "bg-emerald-950";
     return "bg-slate-950";
   };
 
@@ -223,7 +243,7 @@ export default function Home() {
             <span className="text-[10px] font-black tracking-[0.3em] uppercase text-primary">Live Monitoring Active</span>
           </motion.div>
           <h1 className={`font-display text-7xl md:text-8xl tracking-tighter uppercase transition-colors duration-500 text-white`}>
-            {penalty === "RED" ? "EXPELLED" : penalty === "YELLOW" ? "WARNED" : "The Referee"}
+            {penalty === "RED" ? "EXPELLED" : penalty === "YELLOW" ? "WARNED" : penalty === "GREEN" ? "FAIR PLAY" : "The Referee"}
           </h1>
         </div>
 
@@ -317,11 +337,14 @@ export default function Home() {
                 transition={{ type: "spring", stiffness: 150, damping: 12 }}
                 className="perspective-1000 z-50"
               >
-                 <div className={`w-40 h-60 ${penalty === "RED" ? "bg-[#ff0000]" : "bg-[#ffcc00]"} rounded-xl shadow-[0_50px_100px_-20px_rgba(0,0,0,1)] border-4 border-white/40 flex flex-col items-center justify-center relative overflow-hidden`}>
+                 <div className={`w-40 h-60 ${penalty === "RED" ? "bg-[#ff0000]" : penalty === "YELLOW" ? "bg-[#ffcc00]" : "bg-[#10b981]"} rounded-xl shadow-[0_50px_100px_-20px_rgba(0,0,0,1)] border-4 border-white/40 flex flex-col items-center justify-center relative overflow-hidden`}>
                     <div className="absolute inset-0 bg-gradient-to-br from-white/50 via-transparent to-black/30" />
-                    <ShieldAlert className={`w-20 h-20 mb-4 ${penalty === "RED" ? "text-red-950/50" : "text-amber-950/50"}`} />
+                    {penalty === "RED" && <CircleOff className="w-20 h-20 mb-4 text-red-950/50" />}
+                    {penalty === "YELLOW" && <AlertTriangle className="w-20 h-20 mb-4 text-amber-950/50" />}
+                    {penalty === "GREEN" && <CheckCircle2 className="w-20 h-20 mb-4 text-emerald-950/50" />}
+                    
                     <div className="absolute bottom-4 right-4 text-black/20 font-display text-7xl">
-                      {penalty === "RED" ? "!!" : "!"}
+                      {penalty === "RED" ? "!!" : penalty === "YELLOW" ? "!" : "✓"}
                     </div>
                  </div>
               </motion.div>
@@ -336,14 +359,16 @@ export default function Home() {
               animate={{ opacity: 1, y: 0 }}
               className="space-y-8"
             >
-              <div className="bg-white/5 backdrop-blur-2xl p-10 rounded-[40px] border border-white/10 shadow-[0_0_80px_rgba(239,68,68,0.2)]">
-                <h2 className={`font-display text-5xl mb-4 uppercase tracking-tighter ${penalty === "RED" ? "text-red-500" : "text-amber-500"}`}>
-                  {penalty === "RED" ? "GAME OVER" : "OFFSIDE"}
+              <div className={`bg-white/5 backdrop-blur-2xl p-10 rounded-[40px] border border-white/10 shadow-2xl`}>
+                <h2 className={`font-display text-5xl mb-4 uppercase tracking-tighter ${penalty === "RED" ? "text-red-500" : penalty === "YELLOW" ? "text-amber-500" : "text-emerald-500"}`}>
+                  {penalty === "RED" ? "GAME OVER" : penalty === "YELLOW" ? "OFFSIDE" : "MATCH CONDUCT"}
                 </h2>
                 <p className="text-xl font-medium text-slate-300 max-w-sm mx-auto">
                   {penalty === "RED" 
                     ? "Severe violation of the anti-racism policy. You have been expelled." 
-                    : "Caution! Your language is approaching the penalty zone."}
+                    : penalty === "YELLOW" 
+                    ? "Caution! Your language is approaching the penalty zone."
+                    : "Exemplary conduct detected. Keep leading the way with positivity!"}
                 </p>
               </div>
               
@@ -359,12 +384,15 @@ export default function Home() {
         </AnimatePresence>
 
         {penalty === "NONE" && (
-          <div className="pt-12 flex justify-center gap-8 opacity-20 hover:opacity-100 transition-opacity">
-             <button onClick={() => triggerPenalty("YELLOW")} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-amber-500">
-               <Flag className="w-4 h-4" /> Simulate Warning
+          <div className="pt-12 flex justify-center gap-6 opacity-40 hover:opacity-100 transition-opacity flex-wrap">
+             <button onClick={() => triggerPenalty("GREEN")} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-500 border border-emerald-500/20 px-3 py-2 rounded-lg bg-emerald-500/5">
+               <CheckCircle2 className="w-3.5 h-3.5" /> Green (Fair Play)
              </button>
-             <button onClick={() => triggerPenalty("RED")} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-red-500">
-               <AlertTriangle className="w-4 h-4" /> Simulate Expulsion
+             <button onClick={() => triggerPenalty("YELLOW")} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-amber-500 border border-amber-500/20 px-3 py-2 rounded-lg bg-amber-500/5">
+               <AlertTriangle className="w-3.5 h-3.5" /> Yellow (Warning)
+             </button>
+             <button onClick={() => triggerPenalty("RED")} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-red-500 border border-red-500/20 px-3 py-2 rounded-lg bg-red-500/5">
+               <CircleOff className="w-3.5 h-3.5" /> Red (Expulsion)
              </button>
           </div>
         )}
