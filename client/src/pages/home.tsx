@@ -127,7 +127,6 @@ export default function Home() {
       processContent(textToProcess);
       lastInterimRef.current = "";
     } else {
-      // If absolutely nothing was captured, just stop
       stopAllRecognition();
     }
   };
@@ -138,13 +137,22 @@ export default function Home() {
 
     let decision: PenaltyType = "NEUTRAL";
 
-    if (ANALYSIS_MAP.RED.some(word => lowerText.includes(word))) {
-      decision = "RED";
-    } else if (ANALYSIS_MAP.YELLOW.some(word => lowerText.includes(word))) {
-      decision = "YELLOW";
-    } else if (ANALYSIS_MAP.GREEN.some(word => lowerText.includes(word))) {
-      decision = "GREEN";
+    // Split text into words to check against analysis map
+    const words = lowerText.split(/\s+/);
+    
+    let isRed = false;
+    let isYellow = false;
+    let isGreen = false;
+
+    for (const word of words) {
+      if (ANALYSIS_MAP.RED.some(trigger => word.includes(trigger))) isRed = true;
+      if (ANALYSIS_MAP.YELLOW.some(trigger => word.includes(trigger))) isYellow = true;
+      if (ANALYSIS_MAP.GREEN.some(trigger => word.includes(trigger))) isGreen = true;
     }
+
+    if (isRed) decision = "RED";
+    else if (isYellow) decision = "YELLOW";
+    else if (isGreen) decision = "GREEN";
 
     triggerPenalty(decision);
   };
@@ -290,8 +298,8 @@ export default function Home() {
           {showShame && (
             <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
               <div className="bg-white/5 backdrop-blur-2xl p-10 rounded-[40px] border border-white/10 shadow-2xl">
-                <h2 className={`font-display text-5xl mb-4 uppercase tracking-tighter ${penalty === "RED" ? "text-red-500" : penalty === "YELLOW" ? "text-amber-500" : penalty === "GREEN" ? "text-emerald-500" : "text-slate-400"}`}>
-                  {penalty === "RED" ? "EXPULSION" : penalty === "YELLOW" ? "WARNING" : penalty === "GREEN" ? "FAIR PLAY" : "PLAY ON"}
+                <h2 className={`font-display text-5xl mb-4 uppercase tracking-tighter ${penalty === "RED" ? "text-red-500" : penalty === "YELLOW" ? "text-amber-500" : "text-emerald-500"}`}>
+                  {penalty === "RED" ? "EXPULSION" : penalty === "YELLOW" ? "WARNING" : "FAIR PLAY"}
                 </h2>
                 <p className="text-xl font-medium text-slate-300 max-w-sm mx-auto">
                   {penalty === "RED" ? "Severe toxicity detected. Expulsion issued." : 
