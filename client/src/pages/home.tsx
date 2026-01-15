@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, AlertTriangle, RefreshCw, Flag, ShieldAlert, Zap, Waves, CheckCircle2, CircleOff, PowerOff, StopCircle } from "lucide-react";
+import { Mic, AlertTriangle, RefreshCw, Flag, ShieldAlert, Zap, Waves, CheckCircle2, CircleOff, PowerOff, StopCircle, History, Fingerprint } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const ANALYSIS_MAP = {
@@ -9,6 +9,10 @@ const ANALYSIS_MAP = {
     "discrimination", "segregation", "prejudice", "intolerance",
     "homophobic", "transphobic", "sexist", "misogynistic", "misandrist",
     "xenophobic", "ableist", "antisemitic", "islamophobic"
+  ],
+  DOG_WHISTLE: [
+    "thug", "illegal", "degenerate", "globalist", "urban", "cultured", 
+    "vermin", "invaders", "replacement", "purity", "agenda"
   ],
   YELLOW: [
     "stupid", "ugly", "idiot", "dumb", "shut up", "jerk", 
@@ -22,13 +26,23 @@ const ANALYSIS_MAP = {
   ]
 };
 
-type PenaltyType = "NONE" | "YELLOW" | "RED" | "GREEN";
+type PenaltyType = "NONE" | "YELLOW" | "RED" | "GREEN" | "DOG_WHISTLE";
+
+interface Incident {
+  id: string;
+  type: PenaltyType;
+  transcript: string;
+  timestamp: Date;
+  reason: string;
+}
 
 export default function Home() {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [penalty, setPenalty] = useState<PenaltyType>("NONE");
   const [showShame, setShowShame] = useState(false);
+  const [history, setHistory] = useState<Incident[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
   const { toast } = useToast();
 
   const SpeechRecognition =
@@ -120,17 +134,6 @@ export default function Home() {
     }
   };
 
-  const handleFinishSpeaking = () => {
-    const textToProcess = lastInterimRef.current || transcript;
-    if (textToProcess) {
-      setTranscript(textToProcess);
-      processContent(textToProcess);
-      lastInterimRef.current = "";
-    } else {
-      stopAllRecognition();
-    }
-  };
-
   const processContent = (text: string) => {
     const lowerText = text.toLowerCase().trim();
     if (!lowerText) return;
@@ -138,27 +141,50 @@ export default function Home() {
     const cleanText = lowerText.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "");
 
     let decision: PenaltyType = "NONE";
+    let reason = "";
 
     const isRed = ANALYSIS_MAP.RED.some(trigger => cleanText.includes(trigger));
+    const isDogWhistle = ANALYSIS_MAP.DOG_WHISTLE.some(trigger => cleanText.includes(trigger));
     const isYellow = ANALYSIS_MAP.YELLOW.some(trigger => cleanText.includes(trigger));
     const isGreen = ANALYSIS_MAP.GREEN.some(trigger => cleanText.includes(trigger));
 
-    if (isRed) decision = "RED";
-    else if (isYellow) decision = "YELLOW";
-    else if (isGreen) decision = "GREEN";
+    if (isRed) {
+      decision = "RED";
+      reason = "Direct Hate Speech";
+    } else if (isDogWhistle) {
+      decision = "RED"; // Dog whistles are high-level violations
+      reason = "Coded Toxicity / Dog Whistle";
+    } else if (isYellow) {
+      decision = "YELLOW";
+      reason = "Hostile Language";
+    } else if (isGreen) {
+      decision = "GREEN";
+      reason = "Positive Contribution";
+    }
 
     if (decision !== "NONE") {
-      triggerPenalty(decision);
-    } else {
-      // With the button gone, we can either auto-submit on silence or just keep listening.
-      // For now, if nothing detected, we keep the monitor active.
+      setIsScanning(true);
+      setTimeout(() => {
+        setIsScanning(false);
+        triggerPenalty(decision, text, reason);
+      }, 800);
     }
   };
 
-  const triggerPenalty = (type: PenaltyType) => {
+  const triggerPenalty = (type: PenaltyType, text: string, reason: string) => {
     setPenalty(type);
     stopAllRecognition();
     playWhistle(type);
+    
+    const newIncident: Incident = {
+      id: Math.random().toString(36).substr(2, 9),
+      type,
+      transcript: text,
+      timestamp: new Date(),
+      reason
+    };
+    setHistory(prev => [newIncident, ...prev].slice(0, 5));
+    
     setTimeout(() => setShowShame(true), 1200);
   };
 
@@ -174,11 +200,11 @@ export default function Home() {
       let baseFreq = 2000;
       let duration = 0.6;
       
-      if (type === "RED") { baseFreq = 2800; duration = 1.2; }
+      if (type === "RED" || type === "DOG_WHISTLE") { baseFreq = 2800; duration = 1.2; }
       else if (type === "GREEN") { baseFreq = 1200; duration = 0.4; }
 
       osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
-      if (type === "RED" || type === "YELLOW") {
+      if (type === "RED" || type === "YELLOW" || type === "DOG_WHISTLE") {
         osc.frequency.linearRampToValueAtTime(baseFreq - 800, ctx.currentTime + 0.1);
         osc.frequency.linearRampToValueAtTime(baseFreq + 800, ctx.currentTime + 0.2);
       } else {
@@ -200,7 +226,7 @@ export default function Home() {
   };
 
   const getBgColor = () => {
-    if (penalty === "RED") return "bg-red-950";
+    if (penalty === "RED" || penalty === "DOG_WHISTLE") return "bg-red-950";
     if (penalty === "YELLOW") return "bg-amber-950";
     if (penalty === "GREEN") return "bg-emerald-950";
     return "bg-slate-950";
@@ -221,7 +247,7 @@ export default function Home() {
       <div className="z-10 w-full max-w-xl mx-auto text-center space-y-12">
         <div className="space-y-4">
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="font-display text-7xl md:text-8xl tracking-tighter uppercase transition-colors duration-500">
-            {penalty === "RED" ? "EXPELLED" : penalty === "YELLOW" ? "WARNED" : penalty === "GREEN" ? "FAIR PLAY" : "The Referee"}
+            {penalty === "RED" || penalty === "DOG_WHISTLE" ? "EXPELLED" : penalty === "YELLOW" ? "WARNED" : penalty === "GREEN" ? "FAIR PLAY" : "The Referee"}
           </motion.div>
         </div>
 
@@ -233,8 +259,11 @@ export default function Home() {
                   {[...Array(3)].map((_, i) => (
                     <motion.div key={i} className="absolute inset-0 rounded-full border-2 border-primary/30" animate={{ scale: isListening ? [1, 1.5, 1] : 1, opacity: isListening ? [0.5, 0, 0.5] : 0.2 }} transition={{ duration: 2, repeat: Infinity, delay: i * 0.6, ease: "easeInOut" }} />
                   ))}
-                  <motion.div animate={{ scale: isListening ? [1, 1.1, 1] : 1, backgroundColor: isListening ? "rgb(239, 68, 68)" : "rgb(30, 41, 59)" }} className={`w-32 h-32 rounded-full flex items-center justify-center z-10 shadow-2xl transition-all duration-300 ${isListening ? 'text-white' : 'text-slate-400 border-2 border-slate-800'}`}>
-                    {isListening ? <Waves className="w-16 h-16 animate-pulse" /> : <Mic className="w-16 h-16" />}
+                  <motion.div animate={{ 
+                    scale: isListening ? [1, 1.1, 1] : 1, 
+                    backgroundColor: isScanning ? "rgb(168, 85, 247)" : isListening ? "rgb(239, 68, 68)" : "rgb(30, 41, 59)" 
+                  }} className={`w-32 h-32 rounded-full flex items-center justify-center z-10 shadow-2xl transition-all duration-300 ${isListening ? 'text-white' : 'text-slate-400 border-2 border-slate-800'}`}>
+                    {isScanning ? <Fingerprint className="w-16 h-16 animate-pulse" /> : isListening ? <Waves className="w-16 h-16 animate-pulse" /> : <Mic className="w-16 h-16" />}
                   </motion.div>
                 </div>
 
@@ -243,12 +272,14 @@ export default function Home() {
                     <div className="flex flex-col items-center gap-8 w-full max-w-md">
                       <div className="flex gap-1.5 items-end h-10">
                         {[...Array(16)].map((_, i) => (
-                          <motion.div key={i} className="w-2 rounded-full bg-gradient-to-t from-primary to-primary/40" animate={{ height: [10, Math.random() * 30 + 10, 10] }} transition={{ repeat: Infinity, duration: 0.3 + (i * 0.05), ease: "easeInOut" }} />
+                          <motion.div key={i} className="w-2 rounded-full bg-gradient-to-t from-primary to-primary/40" animate={{ height: isScanning ? [40, 60, 40] : [10, Math.random() * 30 + 10, 10] }} transition={{ repeat: Infinity, duration: 0.3 + (i * 0.05), ease: "easeInOut" }} />
                         ))}
                       </div>
-                      <div className="bg-white/5 backdrop-blur-xl p-6 rounded-2xl border border-white/10 w-full shadow-2xl">
+                      <div className={`bg-white/5 backdrop-blur-xl p-6 rounded-2xl border transition-colors duration-500 ${isScanning ? 'border-purple-500/50 bg-purple-500/10' : 'border-white/10'} w-full shadow-2xl`}>
                         <p className="text-xl font-medium text-slate-200 italic leading-relaxed">
-                          {transcript || lastInterimRef.current ? (
+                          {isScanning ? (
+                            <span className="text-purple-400 animate-pulse font-bold tracking-widest uppercase text-sm">Performing Nuance Deep Scan...</span>
+                          ) : transcript || lastInterimRef.current ? (
                             `"${transcript || lastInterimRef.current}..."`
                           ) : (
                             <span className="text-slate-500 opacity-50">Speak now, I'm listening...</span>
@@ -265,12 +296,14 @@ export default function Home() {
               </motion.div>
             ) : (
               <motion.div key={penalty} initial={{ rotateY: 270, scale: 0, y: 100 }} animate={{ rotateY: 0, scale: 1.5, y: 0 }} transition={{ type: "spring", stiffness: 150, damping: 12 }} className="perspective-1000 z-50">
-                 <div className={`w-40 h-60 ${penalty === "RED" ? "bg-[#ff0000]" : penalty === "YELLOW" ? "bg-[#ffcc00]" : "bg-[#10b981]"} rounded-xl shadow-[0_50px_100px_-20px_rgba(0,0,0,1)] border-4 border-white/40 flex flex-col items-center justify-center relative overflow-hidden`}>
+                 <div className={`w-40 h-60 ${penalty === "RED" || penalty === "DOG_WHISTLE" ? "bg-[#ff0000]" : penalty === "YELLOW" ? "bg-[#ffcc00]" : "bg-[#10b981]"} rounded-xl shadow-[0_50px_100px_-20px_rgba(0,0,0,1)] border-4 border-white/40 flex flex-col items-center justify-center relative overflow-hidden`}>
                     <div className="absolute inset-0 bg-gradient-to-br from-white/50 via-transparent to-black/30" />
-                    {penalty === "RED" && <CircleOff className="w-20 h-20 mb-4 text-red-950/50" />}
+                    {(penalty === "RED" || penalty === "DOG_WHISTLE") && <CircleOff className="w-20 h-20 mb-4 text-red-950/50" />}
                     {penalty === "YELLOW" && <AlertTriangle className="w-20 h-20 mb-4 text-amber-950/50" />}
                     {penalty === "GREEN" && <CheckCircle2 className="w-20 h-20 mb-4 text-emerald-950/50" />}
-                    <div className="absolute bottom-4 right-4 text-black/20 font-display text-7xl">{penalty === "RED" ? "!!" : penalty === "YELLOW" ? "!" : "✓"}</div>
+                    <div className="absolute bottom-4 right-4 text-black/20 font-display text-7xl">
+                      {penalty === "RED" || penalty === "DOG_WHISTLE" ? "!!" : penalty === "YELLOW" ? "!" : "✓"}
+                    </div>
                  </div>
               </motion.div>
             )}
@@ -281,14 +314,17 @@ export default function Home() {
           {showShame && (
             <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
               <div className="bg-white/5 backdrop-blur-2xl p-10 rounded-[40px] border border-white/10 shadow-2xl">
-                <h2 className={`font-display text-5xl mb-4 uppercase tracking-tighter ${penalty === "RED" ? "text-red-500" : penalty === "YELLOW" ? "text-amber-500" : "text-emerald-500"}`}>
-                  {penalty === "RED" ? "EXPULSION" : penalty === "YELLOW" ? "WARNING" : "FAIR PLAY"}
+                <h2 className={`font-display text-5xl mb-4 uppercase tracking-tighter ${penalty === "RED" || penalty === "DOG_WHISTLE" ? "text-red-500" : penalty === "YELLOW" ? "text-amber-500" : "text-emerald-500"}`}>
+                  {penalty === "RED" || penalty === "DOG_WHISTLE" ? "EXPULSION" : penalty === "YELLOW" ? "WARNING" : "FAIR PLAY"}
                 </h2>
-                <p className="text-xl font-medium text-slate-300 max-w-sm mx-auto">
-                  {penalty === "RED" ? "Severe toxicity detected. Expulsion issued." : 
-                   penalty === "YELLOW" ? "Caution! Offensive language detected." : 
-                   "Exemplary conduct detected. Keep it up!"}
-                </p>
+                <div className="flex flex-col gap-2">
+                  <p className="text-xl font-medium text-slate-300 max-w-sm mx-auto">
+                    {history[0]?.reason}
+                  </p>
+                  <p className="text-sm font-mono text-slate-500 opacity-70">
+                    Incident ID: {history[0]?.id}
+                  </p>
+                </div>
               </div>
               <button onClick={reset} className="group flex items-center justify-center gap-4 mx-auto px-12 py-6 bg-primary text-white rounded-full font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-primary/40">
                 <RefreshCw className="w-6 h-6 group-hover:rotate-180 transition-transform duration-700" /> Reset Match
@@ -297,18 +333,26 @@ export default function Home() {
           )}
         </AnimatePresence>
 
-        {penalty === "NONE" && (
-          <div className="pt-12 flex justify-center gap-6 opacity-40 hover:opacity-100 transition-opacity flex-wrap">
-             <button onClick={() => triggerPenalty("GREEN")} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-500 border border-emerald-500/20 px-3 py-2 rounded-lg bg-emerald-500/5">
-               <CheckCircle2 className="w-3.5 h-3.5" /> Green (Fair Play)
-             </button>
-             <button onClick={() => triggerPenalty("YELLOW")} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-amber-500 border border-amber-500/20 px-3 py-2 rounded-lg bg-amber-500/5">
-               <AlertTriangle className="w-3.5 h-3.5" /> Yellow (Warning)
-             </button>
-             <button onClick={() => triggerPenalty("RED")} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-red-500 border border-red-500/20 px-3 py-2 rounded-lg bg-red-500/5">
-               <CircleOff className="w-3.5 h-3.5" /> Red (Expulsion)
-             </button>
-          </div>
+        {history.length > 0 && penalty === "NONE" && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4 pt-12 border-t border-white/5">
+            <div className="flex items-center justify-center gap-2 text-slate-500 font-bold uppercase tracking-widest text-[10px]">
+              <History className="w-3 h-3" /> Recent Incidents
+            </div>
+            <div className="flex flex-col gap-2 max-w-sm mx-auto">
+              {history.map((item) => (
+                <div key={item.id} className="bg-white/5 p-3 rounded-xl border border-white/10 flex items-center gap-4 text-left">
+                  <div className={`w-2 h-8 rounded-full ${item.type === "RED" || item.type === "DOG_WHISTLE" ? 'bg-red-500' : item.type === "YELLOW" ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-bold uppercase text-slate-500 truncate">{item.reason}</p>
+                    <p className="text-xs text-slate-300 truncate italic">"{item.transcript}"</p>
+                  </div>
+                  <div className="text-[8px] font-mono text-slate-600">
+                    {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
         )}
 
         {penalty === "NONE" && !isListening && (
