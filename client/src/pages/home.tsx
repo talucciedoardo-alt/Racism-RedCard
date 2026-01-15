@@ -3,22 +3,19 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Mic, AlertTriangle, RefreshCw, Flag, ShieldAlert, Zap, Waves, CheckCircle2, CircleOff, PowerOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-// Emulated AI "Brain" - More sophisticated keyword/context mapping
-const AI_MODEL = {
+// Context mapping
+const ANALYSIS_MAP = {
   RED: [
     "racist", "bigot", "hate", "slur", "nazi", "supremacy", 
-    "discrimination", "segregation", "prejudice", "intolerance",
-    "offensive", "violent", "threat", "attack"
+    "discrimination", "segregation", "prejudice", "intolerance"
   ],
   YELLOW: [
     "stupid", "ugly", "idiot", "dumb", "shut up", "jerk", 
-    "trash", "garbage", "loser", "annoying", "hate you",
-    "be quiet", "nonsense", "useless", "toxic"
+    "trash", "garbage", "loser", "annoying", "hate you"
   ],
   GREEN: [
     "kindness", "respect", "love", "equality", "friend", "help", 
-    "good job", "awesome", "peace", "unity", "fair play",
-    "wonderful", "together", "solidarity", "humanity", "support"
+    "good job", "awesome", "peace", "unity", "fair play"
   ]
 };
 
@@ -76,7 +73,7 @@ export default function Home() {
         if (event.results[i].isFinal) {
           const final = event.results[i][0].transcript;
           setTranscript(final);
-          analyzeContent(final);
+          processContent(final);
           if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
           lastInterimRef.current = "";
         } else {
@@ -87,15 +84,19 @@ export default function Home() {
       if (interimTranscript.length > 0) {
         lastInterimRef.current = interimTranscript;
         if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+        
+        // Aggressive 500ms silence detection for faster processing
         silenceTimeoutRef.current = setTimeout(() => {
           if (lastInterimRef.current && shouldBeListening.current) {
             const textToProcess = lastInterimRef.current;
+            console.log("Silence trigger:", textToProcess);
             setTranscript(textToProcess);
-            analyzeContent(textToProcess);
+            processContent(textToProcess);
             lastInterimRef.current = "";
-            if (recognition.current) recognition.current.stop();
+            // Hard reset on silence to ensure the mic "clears" and restarts
+            stopAllRecognition();
           }
-        }, 800); 
+        }, 500); 
       }
     };
 
@@ -137,27 +138,19 @@ export default function Home() {
     }
   };
 
-  const analyzeContent = async (text: string) => {
+  const processContent = (text: string) => {
     const lowerText = text.toLowerCase().trim();
     if (!lowerText) return;
 
-    setIsAnalyzing(true);
-    
-    // Simulating AI processing delay for a "smarter" feel
-    await new Promise(resolve => setTimeout(resolve, 600));
-
     let decision: PenaltyType = "NONE";
 
-    // AI Logic Simulation
-    if (AI_MODEL.RED.some(word => lowerText.includes(word))) {
+    if (ANALYSIS_MAP.RED.some(word => lowerText.includes(word))) {
       decision = "RED";
-    } else if (AI_MODEL.YELLOW.some(word => lowerText.includes(word))) {
+    } else if (ANALYSIS_MAP.YELLOW.some(word => lowerText.includes(word))) {
       decision = "YELLOW";
-    } else if (AI_MODEL.GREEN.some(word => lowerText.includes(word))) {
+    } else if (ANALYSIS_MAP.GREEN.some(word => lowerText.includes(word))) {
       decision = "GREEN";
     }
-
-    setIsAnalyzing(false);
 
     if (decision !== "NONE") {
       triggerPenalty(decision);
@@ -227,7 +220,7 @@ export default function Home() {
       <div className="z-10 w-full max-w-xl mx-auto text-center space-y-12">
         <div className="space-y-4">
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="font-display text-7xl md:text-8xl tracking-tighter uppercase transition-colors duration-500">
-            {penalty === "RED" ? "EXPELLED" : penalty === "YELLOW" ? "WARNED" : penalty === "GREEN" ? "FAIR PLAY" : "Referee AI"}
+            {penalty === "RED" ? "EXPELLED" : penalty === "YELLOW" ? "WARNED" : penalty === "GREEN" ? "FAIR PLAY" : "The Referee"}
           </motion.div>
         </div>
 
@@ -246,21 +239,14 @@ export default function Home() {
 
                 <div className="mt-12 h-20 flex flex-col items-center justify-center gap-4">
                   {isListening ? (
-                    <>
-                      <div className="flex gap-1.5 items-end">
-                        {[...Array(16)].map((_, i) => (
-                          <motion.div key={i} className="w-2 rounded-full bg-gradient-to-t from-primary to-primary/40" animate={{ height: [20, Math.random() * 60 + 20, 20] }} transition={{ repeat: Infinity, duration: 0.3 + (i * 0.05), ease: "easeInOut" }} />
-                        ))}
-                      </div>
-                      {isAnalyzing && (
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-primary font-bold text-xs tracking-widest uppercase">
-                          <Zap className="w-3 h-3 animate-bounce" /> AI Analyzing Context...
-                        </motion.div>
-                      )}
-                    </>
+                    <div className="flex gap-1.5 items-end">
+                      {[...Array(16)].map((_, i) => (
+                        <motion.div key={i} className="w-2 rounded-full bg-gradient-to-t from-primary to-primary/40" animate={{ height: [20, Math.random() * 60 + 20, 20] }} transition={{ repeat: Infinity, duration: 0.3 + (i * 0.05), ease: "easeInOut" }} />
+                      ))}
+                    </div>
                   ) : (
                     <div className="text-slate-500 font-mono text-xs tracking-widest flex items-center gap-2">
-                      <Zap className="w-3 h-3 text-primary animate-pulse" /> Tap to Activate Referee AI
+                      <Zap className="w-3 h-3 text-primary animate-pulse" /> Tap to Start Monitor
                     </div>
                   )}
                 </div>
@@ -295,11 +281,11 @@ export default function Home() {
                   {penalty === "RED" ? "EXPULSION" : penalty === "YELLOW" ? "WARNING" : "FAIR PLAY"}
                 </h2>
                 <p className="text-xl font-medium text-slate-300 max-w-sm mx-auto">
-                  {penalty === "RED" ? "Referee AI detected severe toxicity. Expulsion issued." : penalty === "YELLOW" ? "Caution! AI detected offensive context." : "Exemplary conduct detected by AI. Keep it up!"}
+                  {penalty === "RED" ? "Severe toxicity detected. Expulsion issued." : penalty === "YELLOW" ? "Caution! Offensive language detected." : "Exemplary conduct detected. Keep it up!"}
                 </p>
               </div>
               <button onClick={reset} className="group flex items-center justify-center gap-4 mx-auto px-12 py-6 bg-primary text-white rounded-full font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-primary/40">
-                <RefreshCw className="w-6 h-6 group-hover:rotate-180 transition-transform duration-700" /> Reset Field
+                <RefreshCw className="w-6 h-6 group-hover:rotate-180 transition-transform duration-700" /> Reset Match
               </button>
             </motion.div>
           )}
@@ -321,7 +307,7 @@ export default function Home() {
 
         {penalty === "NONE" && !isListening && (
            <div className="pt-8 text-slate-500 text-[10px] font-bold uppercase tracking-[0.2em] flex items-center justify-center gap-2">
-             <PowerOff className="w-3 h-3" /> AI Engine Offline
+             <PowerOff className="w-3 h-3" /> Monitor Offline
            </div>
         )}
       </div>
