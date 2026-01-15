@@ -3,19 +3,24 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Mic, AlertTriangle, RefreshCw, Flag, ShieldAlert, Zap, Waves, CheckCircle2, CircleOff, PowerOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-// Expanded list of triggers for better detection
-const RED_CARD_TRIGGERS = [
-  "racist", "bigot", "hate", "slur", "nazi", "supremacy", 
-  "discrimination", "segregation", "prejudice", "intolerance"
-];
-const YELLOW_CARD_TRIGGERS = [
-  "stupid", "ugly", "idiot", "dumb", "shut up", "jerk", 
-  "trash", "garbage", "loser", "annoying", "hate you"
-];
-const GREEN_CARD_TRIGGERS = [
-  "kindness", "respect", "love", "equality", "friend", "help", 
-  "good job", "awesome", "peace", "unity", "fair play"
-];
+// Emulated AI "Brain" - More sophisticated keyword/context mapping
+const AI_MODEL = {
+  RED: [
+    "racist", "bigot", "hate", "slur", "nazi", "supremacy", 
+    "discrimination", "segregation", "prejudice", "intolerance",
+    "offensive", "violent", "threat", "attack"
+  ],
+  YELLOW: [
+    "stupid", "ugly", "idiot", "dumb", "shut up", "jerk", 
+    "trash", "garbage", "loser", "annoying", "hate you",
+    "be quiet", "nonsense", "useless", "toxic"
+  ],
+  GREEN: [
+    "kindness", "respect", "love", "equality", "friend", "help", 
+    "good job", "awesome", "peace", "unity", "fair play",
+    "wonderful", "together", "solidarity", "humanity", "support"
+  ]
+};
 
 type PenaltyType = "NONE" | "YELLOW" | "RED" | "GREEN";
 
@@ -24,6 +29,7 @@ export default function Home() {
   const [transcript, setTranscript] = useState("");
   const [penalty, setPenalty] = useState<PenaltyType>("NONE");
   const [showShame, setShowShame] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const { toast } = useToast();
 
   const SpeechRecognition =
@@ -33,59 +39,44 @@ export default function Home() {
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastInterimRef = useRef("");
 
-  // CRITICAL: Robust cleanup and session management
   const stopAllRecognition = () => {
-    console.log("Stopping all recognition...");
     shouldBeListening.current = false;
-    
     if (silenceTimeoutRef.current) {
       clearTimeout(silenceTimeoutRef.current);
       silenceTimeoutRef.current = null;
     }
-
     if (recognition.current) {
       try {
-        // Unregister all listeners to prevent onend from triggering a restart
         recognition.current.onstart = null;
         recognition.current.onresult = null;
         recognition.current.onerror = null;
         recognition.current.onend = null;
-        
         recognition.current.stop();
-        if (recognition.current.abort) {
-          recognition.current.abort();
-        }
+        if (recognition.current.abort) recognition.current.abort();
       } catch (e) {
         console.error("Error stopping recognition:", e);
       }
     }
-    
     setIsListening(false);
     lastInterimRef.current = "";
-    
-    // Re-initialize recognition for the next session
     initRecognition();
   };
 
   const initRecognition = () => {
     if (!SpeechRecognition) return;
-    
     const rec = new SpeechRecognition();
     rec.continuous = true;
     rec.interimResults = true;
     rec.lang = "en-US";
 
-    rec.onstart = () => {
-      setIsListening(true);
-    };
-
+    rec.onstart = () => setIsListening(true);
     rec.onresult = (event: any) => {
       let interimTranscript = "";
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         if (event.results[i].isFinal) {
           const final = event.results[i][0].transcript;
           setTranscript(final);
-          checkContent(final);
+          analyzeContent(final);
           if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
           lastInterimRef.current = "";
         } else {
@@ -96,14 +87,12 @@ export default function Home() {
       if (interimTranscript.length > 0) {
         lastInterimRef.current = interimTranscript;
         if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
-        
         silenceTimeoutRef.current = setTimeout(() => {
           if (lastInterimRef.current && shouldBeListening.current) {
             const textToProcess = lastInterimRef.current;
             setTranscript(textToProcess);
-            checkContent(textToProcess);
+            analyzeContent(textToProcess);
             lastInterimRef.current = "";
-            // Soft reset to clear buffer without breaking session
             if (recognition.current) recognition.current.stop();
           }
         }, 800); 
@@ -111,29 +100,17 @@ export default function Home() {
     };
 
     rec.onerror = (event: any) => {
-      console.error("Speech recognition error", event.error);
       if (event.error === 'not-allowed') {
-        toast({
-          title: "Permission Denied",
-          description: "Please check your microphone permissions.",
-          variant: "destructive",
-        });
+        toast({ title: "Permission Denied", description: "Check mic settings.", variant: "destructive" });
         stopAllRecognition();
       }
     };
     
     rec.onend = () => {
       if (shouldBeListening.current && penalty === "NONE") {
-        try {
-          recognition.current.start();
-        } catch (e) {
-          // Ignore
-        }
-      } else {
-        setIsListening(false);
-      }
+        try { recognition.current.start(); } catch (e) {}
+      } else { setIsListening(false); }
     };
-
     recognition.current = rec;
   };
 
@@ -149,46 +126,41 @@ export default function Home() {
   }, [penalty]);
 
   const toggleListening = () => {
-    if (!recognition.current) {
-      toast({
-        title: "Voice Not Supported",
-        description: "Your browser doesn't support the Web Speech API.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (isListening) {
-      stopAllRecognition();
-    } else {
+    if (!recognition.current) return;
+    if (isListening) stopAllRecognition();
+    else {
       setPenalty("NONE");
       setShowShame(false);
       setTranscript("");
       shouldBeListening.current = true;
-      try {
-        recognition.current.start();
-      } catch (e) {
-        console.error("Recognition already started", e);
-      }
+      try { recognition.current.start(); } catch (e) {}
     }
   };
 
-  const checkContent = (text: string) => {
+  const analyzeContent = async (text: string) => {
     const lowerText = text.toLowerCase().trim();
     if (!lowerText) return;
 
-    if (RED_CARD_TRIGGERS.some((word) => lowerText.includes(word))) {
-      triggerPenalty("RED");
-      return;
+    setIsAnalyzing(true);
+    
+    // Simulating AI processing delay for a "smarter" feel
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    let decision: PenaltyType = "NONE";
+
+    // AI Logic Simulation
+    if (AI_MODEL.RED.some(word => lowerText.includes(word))) {
+      decision = "RED";
+    } else if (AI_MODEL.YELLOW.some(word => lowerText.includes(word))) {
+      decision = "YELLOW";
+    } else if (AI_MODEL.GREEN.some(word => lowerText.includes(word))) {
+      decision = "GREEN";
     }
 
-    if (YELLOW_CARD_TRIGGERS.some((word) => lowerText.includes(word))) {
-      if (penalty !== "RED") triggerPenalty("YELLOW");
-      return;
-    }
+    setIsAnalyzing(false);
 
-    if (GREEN_CARD_TRIGGERS.some((word) => lowerText.includes(word))) {
-      if (penalty === "NONE") triggerPenalty("GREEN");
+    if (decision !== "NONE") {
+      triggerPenalty(decision);
     }
   };
 
@@ -241,7 +213,7 @@ export default function Home() {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col items-center justify-center p-4 transition-all duration-1000 ${getBgColor()} overflow-hidden`}>
+    <div className={`min-h-screen flex flex-col items-center justify-center p-4 transition-all duration-1000 ${getBgColor()} overflow-hidden text-white font-sans`}>
       <div className="fixed inset-0 pointer-events-none z-0">
         <AnimatePresence>
           {isListening && (
@@ -254,9 +226,9 @@ export default function Home() {
 
       <div className="z-10 w-full max-w-xl mx-auto text-center space-y-12">
         <div className="space-y-4">
-          <h1 className="font-display text-7xl md:text-8xl tracking-tighter uppercase transition-colors duration-500 text-white">
-            {penalty === "RED" ? "EXPELLED" : penalty === "YELLOW" ? "WARNED" : penalty === "GREEN" ? "FAIR PLAY" : "The Referee"}
-          </h1>
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="font-display text-7xl md:text-8xl tracking-tighter uppercase transition-colors duration-500">
+            {penalty === "RED" ? "EXPELLED" : penalty === "YELLOW" ? "WARNED" : penalty === "GREEN" ? "FAIR PLAY" : "Referee AI"}
+          </motion.div>
         </div>
 
         <div className="relative h-80 flex items-center justify-center">
@@ -272,12 +244,23 @@ export default function Home() {
                   </motion.div>
                 </div>
 
-                <div className="mt-12 h-20 flex items-end gap-1.5">
-                  {isListening ? [...Array(16)].map((_, i) => (
-                    <motion.div key={i} className="w-2 rounded-full bg-gradient-to-t from-primary to-primary/40" animate={{ height: [20, Math.random() * 60 + 20, 20] }} transition={{ repeat: Infinity, duration: 0.3 + (i * 0.05), ease: "easeInOut" }} />
-                  )) : (
+                <div className="mt-12 h-20 flex flex-col items-center justify-center gap-4">
+                  {isListening ? (
+                    <>
+                      <div className="flex gap-1.5 items-end">
+                        {[...Array(16)].map((_, i) => (
+                          <motion.div key={i} className="w-2 rounded-full bg-gradient-to-t from-primary to-primary/40" animate={{ height: [20, Math.random() * 60 + 20, 20] }} transition={{ repeat: Infinity, duration: 0.3 + (i * 0.05), ease: "easeInOut" }} />
+                        ))}
+                      </div>
+                      {isAnalyzing && (
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-primary font-bold text-xs tracking-widest uppercase">
+                          <Zap className="w-3 h-3 animate-bounce" /> AI Analyzing Context...
+                        </motion.div>
+                      )}
+                    </>
+                  ) : (
                     <div className="text-slate-500 font-mono text-xs tracking-widest flex items-center gap-2">
-                      <Zap className="w-3 h-3 text-primary animate-pulse" /> Tap to Start Monitor
+                      <Zap className="w-3 h-3 text-primary animate-pulse" /> Tap to Activate Referee AI
                     </div>
                   )}
                 </div>
@@ -312,7 +295,7 @@ export default function Home() {
                   {penalty === "RED" ? "EXPULSION" : penalty === "YELLOW" ? "WARNING" : "FAIR PLAY"}
                 </h2>
                 <p className="text-xl font-medium text-slate-300 max-w-sm mx-auto">
-                  {penalty === "RED" ? "Severe toxicity detected. Expulsion issued." : penalty === "YELLOW" ? "Caution! Offensive language detected." : "Exemplary conduct detected. Keep it up!"}
+                  {penalty === "RED" ? "Referee AI detected severe toxicity. Expulsion issued." : penalty === "YELLOW" ? "Caution! AI detected offensive context." : "Exemplary conduct detected by AI. Keep it up!"}
                 </p>
               </div>
               <button onClick={reset} className="group flex items-center justify-center gap-4 mx-auto px-12 py-6 bg-primary text-white rounded-full font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-primary/40">
@@ -338,7 +321,7 @@ export default function Home() {
 
         {penalty === "NONE" && !isListening && (
            <div className="pt-8 text-slate-500 text-[10px] font-bold uppercase tracking-[0.2em] flex items-center justify-center gap-2">
-             <PowerOff className="w-3 h-3" /> Monitor Offline
+             <PowerOff className="w-3 h-3" /> AI Engine Offline
            </div>
         )}
       </div>
