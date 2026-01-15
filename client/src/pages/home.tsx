@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, AlertTriangle, RefreshCw, Flag, ShieldAlert, Zap, Waves, CheckCircle2, CircleOff, PowerOff, StopCircle, Info } from "lucide-react";
+import { Mic, AlertTriangle, RefreshCw, Flag, ShieldAlert, Zap, Waves, CheckCircle2, CircleOff, PowerOff, StopCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const ANALYSIS_MAP = {
@@ -22,7 +22,7 @@ const ANALYSIS_MAP = {
   ]
 };
 
-type PenaltyType = "NONE" | "YELLOW" | "RED" | "GREEN" | "NEUTRAL";
+type PenaltyType = "NONE" | "YELLOW" | "RED" | "GREEN";
 
 export default function Home() {
   const [isListening, setIsListening] = useState(false);
@@ -135,12 +135,10 @@ export default function Home() {
     const lowerText = text.toLowerCase().trim();
     if (!lowerText) return;
 
-    // Remove common punctuation to prevent matching issues
     const cleanText = lowerText.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "");
 
-    let decision: PenaltyType = "NEUTRAL";
+    let decision: PenaltyType = "NONE";
 
-    // Priority Check: Red > Yellow > Green
     const isRed = ANALYSIS_MAP.RED.some(trigger => cleanText.includes(trigger));
     const isYellow = ANALYSIS_MAP.YELLOW.some(trigger => cleanText.includes(trigger));
     const isGreen = ANALYSIS_MAP.GREEN.some(trigger => cleanText.includes(trigger));
@@ -149,7 +147,12 @@ export default function Home() {
     else if (isYellow) decision = "YELLOW";
     else if (isGreen) decision = "GREEN";
 
-    triggerPenalty(decision);
+    if (decision !== "NONE") {
+      triggerPenalty(decision);
+    } else {
+      // If nothing detected, we just stop listening so the user can try again
+      stopAllRecognition();
+    }
   };
 
   const triggerPenalty = (type: PenaltyType) => {
@@ -173,7 +176,6 @@ export default function Home() {
       
       if (type === "RED") { baseFreq = 2800; duration = 1.2; }
       else if (type === "GREEN") { baseFreq = 1200; duration = 0.4; }
-      else if (type === "NEUTRAL") { baseFreq = 1500; duration = 0.3; }
 
       osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
       if (type === "RED" || type === "YELLOW") {
@@ -201,7 +203,6 @@ export default function Home() {
     if (penalty === "RED") return "bg-red-950";
     if (penalty === "YELLOW") return "bg-amber-950";
     if (penalty === "GREEN") return "bg-emerald-950";
-    if (penalty === "NEUTRAL") return "bg-slate-900";
     return "bg-slate-950";
   };
 
@@ -220,7 +221,7 @@ export default function Home() {
       <div className="z-10 w-full max-w-xl mx-auto text-center space-y-12">
         <div className="space-y-4">
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="font-display text-7xl md:text-8xl tracking-tighter uppercase transition-colors duration-500">
-            {penalty === "RED" ? "EXPELLED" : penalty === "YELLOW" ? "WARNED" : penalty === "GREEN" ? "FAIR PLAY" : penalty === "NEUTRAL" ? "PLAY ON" : "The Referee"}
+            {penalty === "RED" ? "EXPELLED" : penalty === "YELLOW" ? "WARNED" : penalty === "GREEN" ? "FAIR PLAY" : "The Referee"}
           </motion.div>
         </div>
 
@@ -274,15 +275,12 @@ export default function Home() {
               </motion.div>
             ) : (
               <motion.div key={penalty} initial={{ rotateY: 270, scale: 0, y: 100 }} animate={{ rotateY: 0, scale: 1.5, y: 0 }} transition={{ type: "spring", stiffness: 150, damping: 12 }} className="perspective-1000 z-50">
-                 <div className={`w-40 h-60 ${penalty === "RED" ? "bg-[#ff0000]" : penalty === "YELLOW" ? "bg-[#ffcc00]" : penalty === "GREEN" ? "bg-[#10b981]" : "bg-[#475569]"} rounded-xl shadow-[0_50px_100px_-20px_rgba(0,0,0,1)] border-4 border-white/40 flex flex-col items-center justify-center relative overflow-hidden`}>
+                 <div className={`w-40 h-60 ${penalty === "RED" ? "bg-[#ff0000]" : penalty === "YELLOW" ? "bg-[#ffcc00]" : "bg-[#10b981]"} rounded-xl shadow-[0_50px_100px_-20px_rgba(0,0,0,1)] border-4 border-white/40 flex flex-col items-center justify-center relative overflow-hidden`}>
                     <div className="absolute inset-0 bg-gradient-to-br from-white/50 via-transparent to-black/30" />
                     {penalty === "RED" && <CircleOff className="w-20 h-20 mb-4 text-red-950/50" />}
                     {penalty === "YELLOW" && <AlertTriangle className="w-20 h-20 mb-4 text-amber-950/50" />}
                     {penalty === "GREEN" && <CheckCircle2 className="w-20 h-20 mb-4 text-emerald-950/50" />}
-                    {penalty === "NEUTRAL" && <Info className="w-20 h-20 mb-4 text-slate-300/50" />}
-                    <div className="absolute bottom-4 right-4 text-black/20 font-display text-7xl">
-                      {penalty === "RED" ? "!!" : penalty === "YELLOW" ? "!" : penalty === "GREEN" ? "✓" : "•"}
-                    </div>
+                    <div className="absolute bottom-4 right-4 text-black/20 font-display text-7xl">{penalty === "RED" ? "!!" : penalty === "YELLOW" ? "!" : "✓"}</div>
                  </div>
               </motion.div>
             )}
@@ -299,8 +297,7 @@ export default function Home() {
                 <p className="text-xl font-medium text-slate-300 max-w-sm mx-auto">
                   {penalty === "RED" ? "Severe toxicity detected. Expulsion issued." : 
                    penalty === "YELLOW" ? "Caution! Offensive language detected." : 
-                   penalty === "GREEN" ? "Exemplary conduct detected. Keep it up!" :
-                   "No violation detected. Carry on with the match."}
+                   "Exemplary conduct detected. Keep it up!"}
                 </p>
               </div>
               <button onClick={reset} className="group flex items-center justify-center gap-4 mx-auto px-12 py-6 bg-primary text-white rounded-full font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-primary/40">
@@ -314,9 +311,6 @@ export default function Home() {
           <div className="pt-12 flex justify-center gap-6 opacity-40 hover:opacity-100 transition-opacity flex-wrap">
              <button onClick={() => triggerPenalty("GREEN")} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-500 border border-emerald-500/20 px-3 py-2 rounded-lg bg-emerald-500/5">
                <CheckCircle2 className="w-3.5 h-3.5" /> Green (Fair Play)
-             </button>
-             <button onClick={() => triggerPenalty("NEUTRAL")} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 border border-slate-500/20 px-3 py-2 rounded-lg bg-slate-500/5">
-               <Info className="w-3.5 h-3.5" /> Neutral (Play On)
              </button>
              <button onClick={() => triggerPenalty("YELLOW")} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-amber-500 border border-amber-500/20 px-3 py-2 rounded-lg bg-amber-500/5">
                <AlertTriangle className="w-3.5 h-3.5" /> Yellow (Warning)
