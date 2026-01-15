@@ -150,8 +150,8 @@ export default function Home() {
     if (decision !== "NONE") {
       triggerPenalty(decision);
     } else {
-      // If nothing detected, we just stop listening so the user can try again
-      stopAllRecognition();
+      // With the button gone, we can either auto-submit on silence or just keep listening.
+      // For now, if nothing detected, we keep the monitor active.
     }
   };
 
@@ -238,39 +238,29 @@ export default function Home() {
                   </motion.div>
                 </div>
 
-                <div className="mt-12 h-20 flex flex-col items-center justify-center gap-4">
+                <div className="mt-12 min-h-[120px] flex flex-col items-center justify-start gap-4 w-full">
                   {isListening ? (
-                    <div className="flex flex-col items-center gap-6">
-                      <div className="flex gap-1.5 items-end">
+                    <div className="flex flex-col items-center gap-8 w-full max-w-md">
+                      <div className="flex gap-1.5 items-end h-10">
                         {[...Array(16)].map((_, i) => (
-                          <motion.div key={i} className="w-2 rounded-full bg-gradient-to-t from-primary to-primary/40" animate={{ height: [20, Math.random() * 60 + 20, 20] }} transition={{ repeat: Infinity, duration: 0.3 + (i * 0.05), ease: "easeInOut" }} />
+                          <motion.div key={i} className="w-2 rounded-full bg-gradient-to-t from-primary to-primary/40" animate={{ height: [10, Math.random() * 30 + 10, 10] }} transition={{ repeat: Infinity, duration: 0.3 + (i * 0.05), ease: "easeInOut" }} />
                         ))}
                       </div>
-                      <motion.button
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleFinishSpeaking();
-                        }}
-                        className="flex items-center gap-2 px-8 py-4 bg-primary text-white rounded-2xl font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl shadow-primary/20"
-                      >
-                        <StopCircle className="w-5 h-5" /> I'm Finished
-                      </motion.button>
+                      <div className="bg-white/5 backdrop-blur-xl p-6 rounded-2xl border border-white/10 w-full shadow-2xl">
+                        <p className="text-xl font-medium text-slate-200 italic leading-relaxed">
+                          {transcript || lastInterimRef.current ? (
+                            `"${transcript || lastInterimRef.current}..."`
+                          ) : (
+                            <span className="text-slate-500 opacity-50">Speak now, I'm listening...</span>
+                          )}
+                        </p>
+                      </div>
                     </div>
                   ) : (
                     <div className="text-slate-500 font-mono text-xs tracking-widest flex items-center gap-2">
                       <Zap className="w-3 h-3 text-primary animate-pulse" /> Tap to Start Monitor
                     </div>
                   )}
-                </div>
-
-                <div className="mt-4 h-8 flex items-center justify-center">
-                  <AnimatePresence>
-                    {transcript && isListening && (
-                      <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="text-slate-400 italic font-medium">"{transcript}..."</motion.p>
-                    )}
-                  </AnimatePresence>
                 </div>
               </motion.div>
             ) : (
