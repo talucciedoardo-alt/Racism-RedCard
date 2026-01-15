@@ -35,95 +35,117 @@ export default function Home() {
 
   // CRITICAL: Robust cleanup and session management
   const stopAllRecognition = () => {
+    console.log("Stopping all recognition...");
     shouldBeListening.current = false;
+    
     if (silenceTimeoutRef.current) {
       clearTimeout(silenceTimeoutRef.current);
       silenceTimeoutRef.current = null;
     }
+
     if (recognition.current) {
       try {
+        // Unregister all listeners to prevent onend from triggering a restart
+        recognition.current.onstart = null;
+        recognition.current.onresult = null;
+        recognition.current.onerror = null;
+        recognition.current.onend = null;
+        
         recognition.current.stop();
-        // Force abort if stop doesn't work (Chrome sometimes hangs on stop)
-        if (recognition.current.abort) recognition.current.abort();
+        if (recognition.current.abort) {
+          recognition.current.abort();
+        }
       } catch (e) {
         console.error("Error stopping recognition:", e);
       }
     }
+    
     setIsListening(false);
     lastInterimRef.current = "";
+    
+    // Re-initialize recognition for the next session
+    initRecognition();
+  };
+
+  const initRecognition = () => {
+    if (!SpeechRecognition) return;
+    
+    const rec = new SpeechRecognition();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "en-US";
+
+    rec.onstart = () => {
+      setIsListening(true);
+    };
+
+    rec.onresult = (event: any) => {
+      let interimTranscript = "";
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          const final = event.results[i][0].transcript;
+          setTranscript(final);
+          checkContent(final);
+          if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+          lastInterimRef.current = "";
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+
+      if (interimTranscript.length > 0) {
+        lastInterimRef.current = interimTranscript;
+        if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+        
+        silenceTimeoutRef.current = setTimeout(() => {
+          if (lastInterimRef.current && shouldBeListening.current) {
+            const textToProcess = lastInterimRef.current;
+            setTranscript(textToProcess);
+            checkContent(textToProcess);
+            lastInterimRef.current = "";
+            // Soft reset to clear buffer without breaking session
+            if (recognition.current) recognition.current.stop();
+          }
+        }, 800); 
+      }
+    };
+
+    rec.onerror = (event: any) => {
+      console.error("Speech recognition error", event.error);
+      if (event.error === 'not-allowed') {
+        toast({
+          title: "Permission Denied",
+          description: "Please check your microphone permissions.",
+          variant: "destructive",
+        });
+        stopAllRecognition();
+      }
+    };
+    
+    rec.onend = () => {
+      if (shouldBeListening.current && penalty === "NONE") {
+        try {
+          recognition.current.start();
+        } catch (e) {
+          // Ignore
+        }
+      } else {
+        setIsListening(false);
+      }
+    };
+
+    recognition.current = rec;
   };
 
   useEffect(() => {
-    if (SpeechRecognition) {
-      recognition.current = new SpeechRecognition();
-      recognition.current.continuous = true;
-      recognition.current.interimResults = true;
-      recognition.current.lang = "en-US";
-
-      recognition.current.onstart = () => {
-        setIsListening(true);
-      };
-
-      recognition.current.onresult = (event: any) => {
-        let interimTranscript = "";
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            const final = event.results[i][0].transcript;
-            setTranscript(final);
-            checkContent(final);
-            if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
-            lastInterimRef.current = "";
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
-        }
-
-        if (interimTranscript.length > 0) {
-          lastInterimRef.current = interimTranscript;
-          if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
-          
-          // Custom silence detection to force process interim speech
-          silenceTimeoutRef.current = setTimeout(() => {
-            if (lastInterimRef.current && shouldBeListening.current) {
-              const textToProcess = lastInterimRef.current;
-              setTranscript(textToProcess);
-              checkContent(textToProcess);
-              lastInterimRef.current = "";
-              // Soft reset to clear buffer without breaking session
-              if (recognition.current) recognition.current.stop();
-            }
-          }, 800); 
-        }
-      };
-
-      recognition.current.onerror = (event: any) => {
-        console.error("Speech recognition error", event.error);
-        if (event.error === 'not-allowed') {
-          toast({
-            title: "Permission Denied",
-            description: "Please check your microphone permissions.",
-            variant: "destructive",
-          });
-          stopAllRecognition();
-        }
-        // If it's a transient error, it will naturally try to restart in onend if shouldBeListening is true
-      };
-      
-      recognition.current.onend = () => {
-        // Only restart if the user explicitly wants to listen and no penalty is active
-        if (shouldBeListening.current && penalty === "NONE") {
-          try {
-            recognition.current.start();
-          } catch (e) {
-            // Ignore if already started
-          }
-        } else {
-          setIsListening(false);
-        }
-      };
-    }
-
-    return () => stopAllRecognition();
+    initRecognition();
+    return () => {
+      shouldBeListening.current = false;
+      if (recognition.current) {
+        recognition.current.onend = null;
+        recognition.current.abort();
+      }
+    };
   }, [penalty]);
 
   const toggleListening = () => {
@@ -232,9 +254,6 @@ export default function Home() {
 
       <div className="z-10 w-full max-w-xl mx-auto text-center space-y-12">
         <div className="space-y-4">
-          <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className="inline-block px-4 py-1 rounded-full border border-primary/20 bg-primary/5 backdrop-blur-sm mb-4">
-            <span className="text-[10px] font-black tracking-[0.3em] uppercase text-primary">Zero Tolerance Active</span>
-          </motion.div>
           <h1 className="font-display text-7xl md:text-8xl tracking-tighter uppercase transition-colors duration-500 text-white">
             {penalty === "RED" ? "EXPELLED" : penalty === "YELLOW" ? "WARNED" : penalty === "GREEN" ? "FAIR PLAY" : "The Referee"}
           </h1>
@@ -302,6 +321,20 @@ export default function Home() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {penalty === "NONE" && (
+          <div className="pt-12 flex justify-center gap-6 opacity-40 hover:opacity-100 transition-opacity flex-wrap">
+             <button onClick={() => triggerPenalty("GREEN")} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-500 border border-emerald-500/20 px-3 py-2 rounded-lg bg-emerald-500/5">
+               <CheckCircle2 className="w-3.5 h-3.5" /> Green (Fair Play)
+             </button>
+             <button onClick={() => triggerPenalty("YELLOW")} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-amber-500 border border-amber-500/20 px-3 py-2 rounded-lg bg-amber-500/5">
+               <AlertTriangle className="w-3.5 h-3.5" /> Yellow (Warning)
+             </button>
+             <button onClick={() => triggerPenalty("RED")} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-red-500 border border-red-500/20 px-3 py-2 rounded-lg bg-red-500/5">
+               <CircleOff className="w-3.5 h-3.5" /> Red (Expulsion)
+             </button>
+          </div>
+        )}
 
         {penalty === "NONE" && !isListening && (
            <div className="pt-8 text-slate-500 text-[10px] font-bold uppercase tracking-[0.2em] flex items-center justify-center gap-2">
