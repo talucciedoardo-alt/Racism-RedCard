@@ -135,20 +135,15 @@ export default function Home() {
     const lowerText = text.toLowerCase().trim();
     if (!lowerText) return;
 
+    // Remove common punctuation to prevent matching issues
+    const cleanText = lowerText.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "");
+
     let decision: PenaltyType = "NEUTRAL";
 
-    // Split text into words to check against analysis map
-    const words = lowerText.split(/\s+/);
-    
-    let isRed = false;
-    let isYellow = false;
-    let isGreen = false;
-
-    for (const word of words) {
-      if (ANALYSIS_MAP.RED.some(trigger => word.includes(trigger))) isRed = true;
-      if (ANALYSIS_MAP.YELLOW.some(trigger => word.includes(trigger))) isYellow = true;
-      if (ANALYSIS_MAP.GREEN.some(trigger => word.includes(trigger))) isGreen = true;
-    }
+    // Priority Check: Red > Yellow > Green
+    const isRed = ANALYSIS_MAP.RED.some(trigger => cleanText.includes(trigger));
+    const isYellow = ANALYSIS_MAP.YELLOW.some(trigger => cleanText.includes(trigger));
+    const isGreen = ANALYSIS_MAP.GREEN.some(trigger => cleanText.includes(trigger));
 
     if (isRed) decision = "RED";
     else if (isYellow) decision = "YELLOW";
