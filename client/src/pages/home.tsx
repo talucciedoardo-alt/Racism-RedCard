@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, AlertTriangle, RefreshCw, Flag, ShieldAlert, Zap, Waves, CheckCircle2, CircleOff, Info } from "lucide-react";
+import { Mic, AlertTriangle, RefreshCw, Flag, ShieldAlert, Zap, Waves, CheckCircle2, CircleOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // Expanded list of triggers for better detection
@@ -32,6 +32,9 @@ export default function Home() {
   const recognition = useRef<any>(null);
   const shouldBeListening = useRef(false);
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Ref to track the latest interim transcript to avoid closure staleness
+  const lastInterimRef = useRef("");
 
   useEffect(() => {
     if (SpeechRecognition) {
@@ -47,20 +50,33 @@ export default function Home() {
             const final = event.results[i][0].transcript;
             setTranscript(final);
             checkContent(final);
+            // Clear timer on final result
+            if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+            lastInterimRef.current = "";
           } else {
             interimTranscript += event.results[i][0].transcript;
           }
         }
 
-        if (silenceTimeoutRef.current) {
-          clearTimeout(silenceTimeoutRef.current);
-        }
-
         if (interimTranscript.length > 0) {
+          lastInterimRef.current = interimTranscript;
+          
+          // Reset silence timer on every chunk of audio processed
+          if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+          
+          // Aggressive 800ms silence detection for much snappier response
           silenceTimeoutRef.current = setTimeout(() => {
-            setTranscript(interimTranscript);
-            checkContent(interimTranscript);
-          }, 1500);
+            if (lastInterimRef.current) {
+              const textToProcess = lastInterimRef.current;
+              setTranscript(textToProcess);
+              checkContent(textToProcess);
+              lastInterimRef.current = "";
+              // Force stop and restart to clear the recognition buffer if it's hanging
+              if (recognition.current) {
+                recognition.current.stop();
+              }
+            }
+          }, 800); 
         }
       };
 
@@ -110,6 +126,7 @@ export default function Home() {
       recognition.current.stop();
       setIsListening(false);
       if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+      lastInterimRef.current = "";
     } else {
       setPenalty("NONE");
       setShowShame(false);
@@ -125,8 +142,9 @@ export default function Home() {
   };
 
   const checkContent = (text: string) => {
-    const lowerText = text.toLowerCase();
-    
+    const lowerText = text.toLowerCase().trim();
+    if (!lowerText) return;
+
     if (RED_CARD_TRIGGERS.some((word) => lowerText.includes(word))) {
       triggerPenalty("RED");
       return;
@@ -153,6 +171,7 @@ export default function Home() {
     setIsListening(false);
     playWhistle(type);
     if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+    lastInterimRef.current = "";
     
     setTimeout(() => {
       setShowShame(true);
@@ -177,7 +196,7 @@ export default function Home() {
         baseFreq = 2800;
         duration = 1.2;
       } else if (type === "GREEN") {
-        baseFreq = 1200; // Softer, positive sound
+        baseFreq = 1200; 
         duration = 0.4;
       }
 
@@ -201,6 +220,7 @@ export default function Home() {
     setPenalty("NONE");
     setShowShame(false);
     setTranscript("");
+    lastInterimRef.current = "";
     if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
   };
 
@@ -240,7 +260,7 @@ export default function Home() {
             animate={{ opacity: 1, scale: 1 }}
             className="inline-block px-4 py-1 rounded-full border border-primary/20 bg-primary/5 backdrop-blur-sm mb-4"
           >
-            <span className="text-[10px] font-black tracking-[0.3em] uppercase text-primary">Live Monitoring Active</span>
+            <span className="text-[10px] font-black tracking-[0.3em] uppercase text-primary">High Precision Monitoring</span>
           </motion.div>
           <h1 className={`font-display text-7xl md:text-8xl tracking-tighter uppercase transition-colors duration-500 text-white`}>
             {penalty === "RED" ? "EXPELLED" : penalty === "YELLOW" ? "WARNED" : penalty === "GREEN" ? "FAIR PLAY" : "The Referee"}
