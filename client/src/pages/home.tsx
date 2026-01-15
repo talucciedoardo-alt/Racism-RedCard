@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, AlertTriangle, RefreshCw, Flag, ShieldAlert, Zap, Waves, CheckCircle2, CircleOff, PowerOff } from "lucide-react";
+import { Mic, AlertTriangle, RefreshCw, Flag, ShieldAlert, Zap, Waves, CheckCircle2, CircleOff, PowerOff, StopCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-// Context mapping
 const ANALYSIS_MAP = {
   RED: [
     "racist", "bigot", "hate", "slur", "nazi", "supremacy", 
@@ -26,22 +25,16 @@ export default function Home() {
   const [transcript, setTranscript] = useState("");
   const [penalty, setPenalty] = useState<PenaltyType>("NONE");
   const [showShame, setShowShame] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const { toast } = useToast();
 
   const SpeechRecognition =
     (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   const recognition = useRef<any>(null);
   const shouldBeListening = useRef(false);
-  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastInterimRef = useRef("");
 
   const stopAllRecognition = () => {
     shouldBeListening.current = false;
-    if (silenceTimeoutRef.current) {
-      clearTimeout(silenceTimeoutRef.current);
-      silenceTimeoutRef.current = null;
-    }
     if (recognition.current) {
       try {
         recognition.current.onstart = null;
@@ -74,7 +67,6 @@ export default function Home() {
           const final = event.results[i][0].transcript;
           setTranscript(final);
           processContent(final);
-          if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
           lastInterimRef.current = "";
         } else {
           interimTranscript += event.results[i][0].transcript;
@@ -83,20 +75,6 @@ export default function Home() {
 
       if (interimTranscript.length > 0) {
         lastInterimRef.current = interimTranscript;
-        if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
-        
-        // Aggressive 500ms silence detection for faster processing
-        silenceTimeoutRef.current = setTimeout(() => {
-          if (lastInterimRef.current && shouldBeListening.current) {
-            const textToProcess = lastInterimRef.current;
-            console.log("Silence trigger:", textToProcess);
-            setTranscript(textToProcess);
-            processContent(textToProcess);
-            lastInterimRef.current = "";
-            // Hard reset on silence to ensure the mic "clears" and restarts
-            stopAllRecognition();
-          }
-        }, 500); 
       }
     };
 
@@ -136,6 +114,16 @@ export default function Home() {
       shouldBeListening.current = true;
       try { recognition.current.start(); } catch (e) {}
     }
+  };
+
+  const handleFinishSpeaking = () => {
+    if (lastInterimRef.current) {
+      const textToProcess = lastInterimRef.current;
+      setTranscript(textToProcess);
+      processContent(textToProcess);
+      lastInterimRef.current = "";
+    }
+    stopAllRecognition();
   };
 
   const processContent = (text: string) => {
@@ -239,10 +227,23 @@ export default function Home() {
 
                 <div className="mt-12 h-20 flex flex-col items-center justify-center gap-4">
                   {isListening ? (
-                    <div className="flex gap-1.5 items-end">
-                      {[...Array(16)].map((_, i) => (
-                        <motion.div key={i} className="w-2 rounded-full bg-gradient-to-t from-primary to-primary/40" animate={{ height: [20, Math.random() * 60 + 20, 20] }} transition={{ repeat: Infinity, duration: 0.3 + (i * 0.05), ease: "easeInOut" }} />
-                      ))}
+                    <div className="flex flex-col items-center gap-6">
+                      <div className="flex gap-1.5 items-end">
+                        {[...Array(16)].map((_, i) => (
+                          <motion.div key={i} className="w-2 rounded-full bg-gradient-to-t from-primary to-primary/40" animate={{ height: [20, Math.random() * 60 + 20, 20] }} transition={{ repeat: Infinity, duration: 0.3 + (i * 0.05), ease: "easeInOut" }} />
+                        ))}
+                      </div>
+                      <motion.button
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleFinishSpeaking();
+                        }}
+                        className="flex items-center gap-2 px-8 py-4 bg-primary text-white rounded-2xl font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl shadow-primary/20"
+                      >
+                        <StopCircle className="w-5 h-5" /> I'm Finished
+                      </motion.button>
                     </div>
                   ) : (
                     <div className="text-slate-500 font-mono text-xs tracking-widest flex items-center gap-2">
