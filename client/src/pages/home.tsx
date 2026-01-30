@@ -1,6 +1,21 @@
-import { useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, AlertTriangle, RefreshCw, Flag, ShieldAlert, Zap, Waves, CheckCircle2, CircleOff, PowerOff, StopCircle, History, Fingerprint } from "lucide-react";
+import {
+  Mic,
+  AlertTriangle,
+  RefreshCw,
+  Zap,
+  Waves,
+  CheckCircle2,
+  CircleOff,
+  PowerOff,
+  History,
+  Fingerprint,
+  Layers,
+  Shuffle,
+  Undo2,
+  Eye,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const ANALYSIS_MAP = {
@@ -36,6 +51,55 @@ interface Incident {
   reason: string;
 }
 
+type Suit = "♠" | "♥" | "♦" | "♣";
+
+type Rank =
+  | "A"
+  | "2"
+  | "3"
+  | "4"
+  | "5"
+  | "6"
+  | "7"
+  | "8"
+  | "9"
+  | "10"
+  | "J"
+  | "Q"
+  | "K";
+
+type PlayingCard = {
+  id: string;
+  suit: Suit;
+  rank: Rank;
+};
+
+const SUITS: Suit[] = ["♠", "♥", "♦", "♣"];
+const RANKS: Rank[] = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+
+function createDeck(): PlayingCard[] {
+  const deck: PlayingCard[] = [];
+  for (const suit of SUITS) {
+    for (const rank of RANKS) {
+      deck.push({ id: `${rank}${suit}`, suit, rank });
+    }
+  }
+  return deck;
+}
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function isRedSuit(suit: Suit) {
+  return suit === "♥" || suit === "♦";
+}
+
 export default function Home() {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -43,6 +107,11 @@ export default function Home() {
   const [showShame, setShowShame] = useState(false);
   const [history, setHistory] = useState<Incident[]>([]);
   const [isScanning, setIsScanning] = useState(false);
+
+  const [deck, setDeck] = useState<PlayingCard[]>(() => shuffle(createDeck()));
+  const [pile, setPile] = useState<PlayingCard[]>([]);
+  const [activeCard, setActiveCard] = useState<PlayingCard | null>(null);
+
   const { toast } = useToast();
 
   const SpeechRecognition =
@@ -225,11 +294,56 @@ export default function Home() {
     lastInterimRef.current = "";
   };
 
+  const deckCount = deck.length;
+  const pileCount = pile.length;
+
   const getBgColor = () => {
     if (penalty === "RED" || penalty === "DOG_WHISTLE") return "bg-red-950";
     if (penalty === "YELLOW") return "bg-amber-950";
     if (penalty === "GREEN") return "bg-emerald-950";
     return "bg-slate-950";
+  };
+
+  const drawCard = () => {
+    setDeck((prev) => {
+      if (prev.length === 0) {
+        toast({
+          title: "Deck empty",
+          description: "Shuffle the pile back in to keep going.",
+        });
+        return prev;
+      }
+      const [top, ...rest] = prev;
+      setActiveCard(top);
+      setPile((p) => [top, ...p]);
+      return rest;
+    });
+  };
+
+  const shuffleDeck = () => {
+    setDeck((prev) => shuffle(prev));
+    toast({ title: "Shuffled", description: "Deck order randomized." });
+  };
+
+  const recyclePileIntoDeck = () => {
+    setDeck((prevDeck) => {
+      if (pile.length === 0) {
+        toast({ title: "Pile empty", description: "Draw some cards first." });
+        return prevDeck;
+      }
+      const next = shuffle([...prevDeck, ...pile]);
+      return next;
+    });
+    setPile([]);
+    setActiveCard(null);
+    toast({ title: "Recycled", description: "Pile shuffled back into the deck." });
+  };
+
+  const resetCards = () => {
+    setDeck(shuffle(createDeck()));
+    setPile([]);
+    setActiveCard(null);
+    toast({ title: "New deck", description: "Fresh 52-card deck ready." });
   };
 
   return (
@@ -246,9 +360,68 @@ export default function Home() {
 
       <div className="z-10 w-full max-w-xl mx-auto text-center space-y-12">
         <div className="space-y-4">
-          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="font-display text-7xl md:text-8xl tracking-tighter uppercase transition-colors duration-500">
-            {penalty === "RED" || penalty === "DOG_WHISTLE" ? "EXPELLED" : penalty === "YELLOW" ? "WARNED" : penalty === "GREEN" ? "FAIR PLAY" : "The Referee"}
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="font-display text-7xl md:text-8xl tracking-tighter uppercase transition-colors duration-500"
+            data-testid="text-title"
+          >
+            {penalty === "RED" || penalty === "DOG_WHISTLE"
+              ? "EXPELLED"
+              : penalty === "YELLOW"
+                ? "WARNED"
+                : penalty === "GREEN"
+                  ? "FAIR PLAY"
+                  : "The Referee"}
           </motion.div>
+
+          <div className="flex items-center justify-center gap-3" data-testid="panel-card-controls">
+            <button
+              type="button"
+              onClick={drawCard}
+              className="group inline-flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white/90 shadow-lg shadow-black/20 backdrop-blur-xl transition-all hover:bg-white/10 hover:shadow-xl active:scale-[0.98]"
+              data-testid="button-draw-card"
+            >
+              <Layers className="h-4 w-4 opacity-80 transition-opacity group-hover:opacity-100" />
+              Draw
+              <span className="ml-1 rounded-full bg-white/10 px-2 py-0.5 font-mono text-[10px] text-white/70" data-testid="text-deck-count">
+                {deckCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={shuffleDeck}
+              className="group inline-flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white/90 shadow-lg shadow-black/20 backdrop-blur-xl transition-all hover:bg-white/10 hover:shadow-xl active:scale-[0.98]"
+              data-testid="button-shuffle-deck"
+            >
+              <Shuffle className="h-4 w-4 opacity-80 transition-opacity group-hover:opacity-100" />
+              Shuffle
+            </button>
+
+            <button
+              type="button"
+              onClick={recyclePileIntoDeck}
+              className="group inline-flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white/90 shadow-lg shadow-black/20 backdrop-blur-xl transition-all hover:bg-white/10 hover:shadow-xl active:scale-[0.98]"
+              data-testid="button-recycle-pile"
+            >
+              <Undo2 className="h-4 w-4 opacity-80 transition-opacity group-hover:opacity-100" />
+              Recycle
+              <span className="ml-1 rounded-full bg-white/10 px-2 py-0.5 font-mono text-[10px] text-white/70" data-testid="text-pile-count">
+                {pileCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={resetCards}
+              className="group inline-flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white/90 shadow-lg shadow-black/20 backdrop-blur-xl transition-all hover:bg-white/10 hover:shadow-xl active:scale-[0.98]"
+              data-testid="button-reset-cards"
+            >
+              <Eye className="h-4 w-4 opacity-80 transition-opacity group-hover:opacity-100" />
+              New
+            </button>
+          </div>
         </div>
 
         <div className="relative h-80 flex items-center justify-center">
