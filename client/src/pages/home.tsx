@@ -6,15 +6,24 @@ import { useToast } from "@/hooks/use-toast";
 const ANALYSIS_MAP = {
   RED: [
     "racist", "bigot", "hate", "slur", "nazi", "supremacy", 
-    "discrimination", "segregation", "prejudice", "intolerance"
+    "discrimination", "segregation", "prejudice", "intolerance",
+    "offensive", "violent", "threat", "attack", "hateful", "xenophobia",
+    "homophobia", "transphobia", "antisemitism", "islamophobia",
+    "white power", "master race", "terrorist", "genocide"
   ],
   YELLOW: [
     "stupid", "ugly", "idiot", "dumb", "shut up", "jerk", 
-    "trash", "garbage", "loser", "annoying", "hate you"
+    "trash", "garbage", "loser", "annoying", "hate you",
+    "be quiet", "nonsense", "useless", "toxic", "idiotic",
+    "pathetic", "moron", "imbecile", "ignorant", "disgusting",
+    "vile", "nasty", "cruel", "mean", "bully"
   ],
   GREEN: [
     "kindness", "respect", "love", "equality", "friend", "help", 
-    "good job", "awesome", "peace", "unity", "fair play"
+    "good job", "awesome", "peace", "unity", "fair play",
+    "wonderful", "together", "solidarity", "humanity", "support",
+    "brilliant", "inclusive", "diversity", "acceptance", "harmony",
+    "brave", "honest", "integrity"
   ]
 };
 
@@ -132,12 +141,21 @@ export default function Home() {
 
     let decision: PenaltyType = "NONE";
 
+    // Check RED triggers (highest priority)
     if (ANALYSIS_MAP.RED.some(word => lowerText.includes(word))) {
       decision = "RED";
-    } else if (ANALYSIS_MAP.YELLOW.some(word => lowerText.includes(word))) {
-      decision = "YELLOW";
-    } else if (ANALYSIS_MAP.GREEN.some(word => lowerText.includes(word))) {
-      decision = "GREEN";
+    } 
+    // Check YELLOW triggers
+    else if (ANALYSIS_MAP.YELLOW.some(word => lowerText.includes(word))) {
+      if (penalty !== "RED") {
+        decision = "YELLOW";
+      }
+    } 
+    // Check GREEN triggers
+    else if (ANALYSIS_MAP.GREEN.some(word => lowerText.includes(word))) {
+      if (penalty === "NONE") {
+        decision = "GREEN";
+      }
     }
 
     if (decision !== "NONE") {
